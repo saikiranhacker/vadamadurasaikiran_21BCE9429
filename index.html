@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Turn-based Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #333;
+            color: #fff;
+        }
+
+        #game-container {
+            text-align: center;
+        }
+
+        #player-turn {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        #board {
+            display: grid;
+            grid-template-columns: repeat(5, 50px);
+            grid-template-rows: repeat(5, 50px);
+            gap: 2px;
+            margin-bottom: 20px;
+        }
+
+        .cell {
+            width: 50px;
+            height: 50px;
+            border: 1px solid #555;
+            text-align: center;
+            vertical-align: middle;
+            line-height: 50px;
+            background-color: #222;
+            color: #ddd;
+            cursor: pointer;
+        }
+
+        .cell.selected {
+            background-color: #4a90e2;
+            color: #fff;
+        }
+
+        #selected-piece {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+
+        .move-buttons {
+            display: flex;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        .move-buttons button {
+            margin: 0 5px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            background-color: #555;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .move-buttons button:hover {
+            background-color: #777;
+        }
+
+        .move-buttons button:disabled {
+            background-color: #333;
+            cursor: not-allowed;
+        }
+
+        #move-history {
+            margin-top: 20px;
+            text-align: left;
+            display: inline-block;
+        }
+
+        #move-history ul {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        #move-history ul li {
+            margin-bottom: 5px;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="player-turn">Current Player: A</div>
+        <div id="board"></div>
+        <div id="selected-piece">Selected: None</div>
+        <div class="move-buttons">
+            <button id="move-l" onclick="makeMove('L')" disabled>L</button>
+            <button id="move-r" onclick="makeMove('R')" disabled>R</button>
+            <button id="move-f" onclick="makeMove('F')" disabled>F</button>
+            <button id="move-b" onclick="makeMove('B')" disabled>B</button>
+            <button id="move-fl" onclick="makeMove('FL')" style="display:none;" disabled>FL</button>
+            <button id="move-fr" onclick="makeMove('FR')" style="display:none;" disabled>FR</button>
+            <button id="move-bl" onclick="makeMove('BL')" style="display:none;" disabled>BL</button>
+            <button id="move-br" onclick="makeMove('BR')" style="display:none;" disabled>BR</button>
+        </div>
+        <div id="move-history">
+            <h3>Move History</h3>
+            <ul id="history-list"></ul>
+        </div>
+    </div>
+
+    <script>
+        const ws = new WebSocket("ws://localhost:8765");
+        let selectedPiece = null; 
+        let currentPlayer = 'A';
+
+        ws.onopen = () => {
+            console.log("Connected to server");
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.error) {
+                alert(data.error);
+            } else {
+                updateBoard(data.board);
+                currentPlayer = data.current_player;
+                document.getElementById('player-turn').innerText = `Current Player: ${currentPlayer}`;
+                selectedPiece = null;
+                toggleMoveButtons(false); // Disable buttons initially
+
+                if (currentPlayer === 'A' || currentPlayer === 'B') {
+                    toggleMoveButtons(true);
+                }
+            }
+        };
+
+        function updateBoard(board) {
+            const boardDiv = document.getElementById('board');
+            boardDiv.innerHTML = '';
+            board.forEach((row, x) => {
+                row.forEach((cell, y) => {
+                    const cellDiv = document.createElement('div');
+                    cellDiv.className = 'cell';
+                    cellDiv.dataset.position = `${x},${y}`;
+                    cellDiv.innerText = cell;
+
+                    if (cell) {
+                        cellDiv.onclick = () => selectPiece(cell, x, y);
+                    } else {
+                        cellDiv.onclick = null;
+                    }
+
+                    boardDiv.appendChild(cellDiv);
+                });
+            });
+        }
+
+        function selectPiece(piece, x, y) {
+            selectedPiece = { piece, x, y };
+            document.getElementById('selected-piece').innerText = `Selected: ${piece}`;
+            toggleMoveButtons(true);
+        }
+
+        function toggleMoveButtons(enable) {
+            const buttons = document.querySelectorAll('.move-buttons button');
+            buttons.forEach(button => button.disabled = !enable);
+        }
+
+        function makeMove(direction) {
+            if (selectedPiece) {
+                const [x, y] = [selectedPiece.x, selectedPiece.y];
+                let targetPos;
+
+                switch (direction) {
+                    case 'L': targetPos = [x, y - 1]; break;
+                    case 'R': targetPos = [x, y + 1]; break;
+                    case 'F': targetPos = [x - 1, y]; break;
+                    case 'B': targetPos = [x + 1, y]; break;
+                    case 'FL': targetPos = [x - 1, y - 1]; break;
+                    case 'FR': targetPos = [x - 1, y + 1]; break;
+                    case 'BL': targetPos = [x + 1, y - 1]; break;
+                    case 'BR': targetPos = [x + 1, y + 1]; break;
+                    default: return;
+                }
+
+                const move = {
+                    start: [x, y],
+                    end: targetPos,
+                    piece: selectedPiece.piece
+                };
+
+                ws.send(JSON.stringify(move));
+                selectedPiece = null;
+                toggleMoveButtons(false);
+            }
+        }
+    </script>
+</body>
+</html>
